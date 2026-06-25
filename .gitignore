@@ -1,0 +1,22 @@
+# Binaries — anchor to repo root so cmd/wolfee/ (the source dir) isn't ignored
+/bin/
+/wolfee
+/wolfee-*
+*.exe
+
+# Test artefacts
+coverage.out
+*.test
+
+# Editor
+.idea/
+.vscode/
+*.swp
+
+# Local data overrides — never commit /data
+/data/
+*.sbom.json
+*.cdx.json
+
+# go.sum is committed (reproducibility) but vendor/ is not
+/vendor/

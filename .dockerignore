@@ -1,0 +1,14 @@
+# Don't ship local build artefacts or editor noise into the docker
+# context. Also excludes test-only files since the final image runs
+# wolfee, not its tests.
+bin/
+.git/
+.github/
+*.test
+*.out
+.idea/
+.vscode/
+*.swp
+*.sbom.json
+*.cdx.json
+data/
