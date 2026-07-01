@@ -251,8 +251,23 @@ func buildImageReport(source string, ros *ReportOS, tr *trivy.Report, results []
 		applyReachability(&cr, reach)
 		r.Components = append(r.Components, cr)
 	}
+	markImageLibs(r.Components)
+	filterVulnsByVersion(r.Components)
 	computeImageTotals(r, reach, sourceLibs != nil)
 	return r
+}
+
+// markImageLibs distinguishes language libraries that ship in the image from OS
+// packages: a non-OS component tagged OriginImage becomes OriginImageLib, while
+// OS packages keep OriginImage. The table renders both the same (LIB(image) vs
+// DEB/APK(image)); this only sharpens the JSON origin.
+func markImageLibs(components []ComponentReport) {
+	for i := range components {
+		c := &components[i]
+		if c.Origin == OriginImage && componentLanguage(c.System, c.PURL) != "os" {
+			c.Origin = OriginImageLib
+		}
+	}
 }
 
 func computeImageTotals(r *Report, reach *reachability.Result, compareMode bool) {

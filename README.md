@@ -234,6 +234,20 @@ The `(image)` qualifier means "ships in the image, not in your source" — so
 within everything that isn't yours you can still tell an OS package from a
 stray bundled library.
 
+Whenever wolfee knows your project's source languages (any source-aware scan —
+`--compare`, `--reachable`, or a plain project scan) it also fills the **`LANG`**
+column, flagging each library against those languages:
+
+| `LANG` | meaning |
+|--------|---------|
+| `relevant-<lang>` (green) | the library's language matches one of your project's languages — e.g. `relevant-go` in a Go project |
+| `relevant-<lang>` (red) | the library's language is **foreign** to your project — e.g. a `relevant-php` library surfacing in a Go project |
+| `runtime/os` | an OS/runtime package, not a source library (no relevance verdict) |
+
+In JSON output the same verdict is exposed as a boolean `relevant` field on each
+component (`true` when the language matches, `false` when it doesn't; omitted
+when there is no source language to compare against).
+
 ```bash
 wolfee --image my-app:latest --compare ./src
 ```

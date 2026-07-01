@@ -14,7 +14,11 @@ const (
 	OriginApp     = "app"
 	OriginUnknown = "unknown"
 
-	OriginImage = "image"
+	// OriginImage is an OS package that ships in the image (rendered DEB/APK/
+	// RPM(image)). OriginImageLib is a language library that rode in with the
+	// image but is not one of your source dependencies (rendered LIB(image)).
+	OriginImage    = "image"
+	OriginImageLib = "image-lib"
 )
 
 const (

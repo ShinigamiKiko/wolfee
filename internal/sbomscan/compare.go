@@ -25,9 +25,22 @@ func SourceLibSet(bom []byte) map[string]bool {
 		if c.PURL == "" {
 			continue
 		}
-		set[strings.ToLower(purlNoVersion(c.PURL))] = true
+		set[sourceMemberKey(c.PURL)] = true
 	}
 	return set
+}
+
+// sourceMemberKey identifies a library by name AND version so that a copy of the
+// same module riding into the image at a different version (e.g. a bundled CLI's
+// golang.org/x/crypto@v0.49.0 when your code uses v0.31.0) is not mistaken for
+// one of your own dependencies.
+func sourceMemberKey(purl string) string {
+	base := purlNoVersion(purl)
+	if base == "" {
+		return ""
+	}
+	ver := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(purlVersion(purl))), "v")
+	return base + "@" + ver
 }
 
 func SourceScopeMap(bom []byte) map[string]string {
@@ -77,11 +90,20 @@ func MergeSourceVulns(image, source *Report, reach *reachability.Result) {
 	if len(image.Dependencies) == 0 && len(source.Dependencies) > 0 {
 		image.Dependencies = source.Dependencies
 	}
+	normVer := func(v string) string {
+		return strings.TrimPrefix(strings.ToLower(strings.TrimSpace(v)), "v")
+	}
+	// Match components by name AND version. A version-agnostic key let a source
+	// finding for one version (e.g. x/crypto v0.31.0) merge into an image
+	// component of a different version (v0.49.0) and contaminate it with CVEs
+	// that don't apply there. Vulnerability lists are version-specific, so the
+	// match has to be too.
 	key := func(c *ComponentReport) string {
+		base := strings.ToLower(c.System + "|" + c.Name)
 		if c.PURL != "" {
-			return strings.ToLower(purlNoVersion(c.PURL))
+			base = strings.ToLower(purlNoVersion(c.PURL))
 		}
-		return strings.ToLower(c.System + "|" + c.Name)
+		return base + "@" + normVer(c.Version)
 	}
 	idx := make(map[string]int, len(image.Components))
 	for i := range image.Components {
@@ -116,6 +138,8 @@ func MergeSourceVulns(image, source *Report, reach *reachability.Result) {
 		image.Components = append(image.Components, add)
 		idx[k] = len(image.Components) - 1
 	}
+	markImageLibs(image.Components)
+	filterVulnsByVersion(image.Components)
 	computeImageTotals(image, reach, true)
 }
 
@@ -155,7 +179,7 @@ func unionVulns(into, extra []onlinescan.Vulnerability) []onlinescan.Vulnerabili
 }
 
 func fromSource(cr *ComponentReport, sourceLibs map[string]bool, reach *reachability.Result) bool {
-	if cr.PURL != "" && sourceLibs[strings.ToLower(purlNoVersion(cr.PURL))] {
+	if cr.PURL != "" && sourceLibs[sourceMemberKey(cr.PURL)] {
 		return true
 	}
 	if reach != nil && reach.GoVersion != "" &&

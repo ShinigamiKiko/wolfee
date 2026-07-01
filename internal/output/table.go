@@ -129,11 +129,20 @@ func (t Table) Render(w io.Writer, report any) error {
 
 	fmt.Fprintln(w, c.bold("Findings"))
 	showLayer := anyLayerDigest(components)
+	showLang := anyLanguageRelevance(components)
 	fg := &grid{}
 	if showLayer {
-		fg.add("PACKAGE", "VERSION", "ECO", "LAYER", "VULNS", "FLAGS", "TOXIC", "ORIGIN")
+		header := []string{"PACKAGE", "VERSION", "ECO", "LAYER", "VULNS", "FLAGS", "TOXIC", "ORIGIN"}
+		if showLang {
+			header = append(header, "LANG")
+		}
+		fg.add(header...)
 	} else {
-		fg.add("PACKAGE", "VERSION", "ECO", "VULNS", "FLAGS", "TOXIC")
+		header := []string{"PACKAGE", "VERSION", "ECO", "VULNS", "FLAGS", "TOXIC"}
+		if showLang {
+			header = append(header, "LANG")
+		}
+		fg.add(header...)
 	}
 	shown := 0
 	for _, r := range rows {
@@ -181,8 +190,16 @@ func (t Table) Render(w io.Writer, report any) error {
 		}
 
 		transitive := strings.EqualFold(stringField(comp, "Scope"), "optional") || usage == "used-transitive"
+		lang := ""
+		if showLang {
+			relevant, known := relevantField(comp, "Relevant")
+			lang = c.lang(
+				langLabel(stringField(comp, "System"), stringField(comp, "PURL"), stringField(comp, "Language")),
+				relevant, known,
+			)
+		}
 		if showLayer {
-			fg.add(
+			cells := []string{
 				stringField(comp, "Name"),
 				stringField(comp, "Version"),
 				strings.ToLower(stringField(comp, "System")),
@@ -191,16 +208,24 @@ func (t Table) Render(w io.Writer, report any) error {
 				strings.Join(flags, " "),
 				toxic,
 				c.origin(originLabel(stringField(comp, "System"), stringField(comp, "Origin"), transitive)),
-			)
+			}
+			if showLang {
+				cells = append(cells, lang)
+			}
+			fg.add(cells...)
 		} else {
-			fg.add(
+			cells := []string{
 				stringField(comp, "Name"),
 				stringField(comp, "Version"),
 				strings.ToLower(stringField(comp, "System")),
 				fmt.Sprintf("%d", intField(comp, "VulnCount")),
 				strings.Join(flags, " "),
 				toxic,
-			)
+			}
+			if showLang {
+				cells = append(cells, lang)
+			}
+			fg.add(cells...)
 		}
 		shown++
 	}
@@ -339,32 +364,27 @@ func renderDependencyPaths(w io.Writer, c colors, components reflect.Value) {
 			break
 		}
 
-		name, imgVer := splitNameVer(r.pkg)
-		srcVer := ""
-		if len(r.paths) > 0 {
-			if tail := r.paths[0]; len(tail) > 0 {
-				_, srcVer = splitNameVer(tail[len(tail)-1])
-			}
-		}
-		drift := imgVer != "" && srcVer != "" && imgVer != srcVer
+		_, compVer := splitNameVer(r.pkg)
 
-		header := r.pkg
-		if drift {
-			header = name + "@" + c.high(imgVer)
-		}
-		fmt.Fprintf(w, "  %s %s\n", header, c.high("(vuln)"))
+		fmt.Fprintf(w, "  %s %s\n", r.pkg, c.high("(vuln)"))
 		for _, p := range r.paths {
 			if len(p) == 0 {
 				continue
 			}
 
 			hops := append([]string(nil), p...)
-			hops[0] = c.crit("*") + hops[0]
-			if drift {
-				if n, v := splitNameVer(hops[len(hops)-1]); v != "" {
-					hops[len(hops)-1] = n + "@" + c.green(v)
+			// The chain ends at the vulnerable lib, so pin its last hop to the
+			// version that was actually flagged. In --compare the path is grafted
+			// from the source SBOM, which can record a different (require-edge)
+			// version than the one the image ships - showing that here just looked
+			// like an unexplained second version of the same package.
+			if compVer != "" {
+				last := len(hops) - 1
+				if n, _ := splitNameVer(hops[last]); n != "" {
+					hops[last] = n + "@" + compVer
 				}
 			}
+			hops[0] = c.crit("*") + hops[0]
 			fmt.Fprintf(w, "    %s\n", strings.Join(hops, sep))
 		}
 	}

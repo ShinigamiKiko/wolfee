@@ -24,8 +24,9 @@ func applyReachability(cr *ComponentReport, oracle *reachability.Result) {
 		}
 		return oracle.ImportPackageUsage(atomEco, atomPURL)
 	}
+	pkgUsage := usage()
 
-	switch usage() {
+	switch pkgUsage {
 	case reachability.StateReachable, reachability.StateInUse:
 		if oracle.IsTransitiveImport(atomPURL) {
 			cr.PackageUsage = "used-transitive"
@@ -43,6 +44,8 @@ func applyReachability(cr *ComponentReport, oracle *reachability.Result) {
 	case reachability.StateDead:
 		cr.PackageUsage = "unused"
 	}
+	applyLanguageRelevance(cr, oracle)
+
 	for j := range cr.Vulnerabilities {
 		v := &cr.Vulnerabilities[j]
 		ids := make([]string, 0, 2+len(v.Aliases))
@@ -51,7 +54,7 @@ func applyReachability(cr *ComponentReport, oracle *reachability.Result) {
 		st := oracle.Lookup(ids...)
 		if st == reachability.StateUnknown {
 
-			st = usage()
+			st = pkgUsage
 		}
 		switch st {
 		case reachability.StateReachable:
@@ -111,15 +114,19 @@ func injectGovulncheckFindings(components *[]ComponentReport, oracle *reachabili
 	if goVer == "" {
 		goVer = "unknown"
 	}
+	relevant := true
 	stdlib := ComponentReport{
-		PURL:         fmt.Sprintf("pkg:golang/stdlib@%s", goVer),
-		System:       "golang",
-		Name:         "stdlib",
-		Version:      goVer,
-		Scope:        "required",
-		PackageUsage: "used",
-		Class:        "lang-pkgs",
-		Type:         "golang",
+		PURL:              fmt.Sprintf("pkg:golang/stdlib@%s", goVer),
+		System:            "golang",
+		Name:              "stdlib",
+		Version:           goVer,
+		Scope:             "required",
+		PackageUsage:      "used",
+		Language:          "go",
+		LanguageRelevance: LanguageRelevanceUsed,
+		Relevant:          &relevant,
+		Class:             "lang-pkgs",
+		Type:              "golang",
 	}
 	for _, goID := range stdlibIDs {
 		primaryID, aliasIDs := bestVulnID(goID, oracle.GOAliases[goID])

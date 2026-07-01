@@ -16,6 +16,8 @@ const (
 type Result struct {
 	ByVuln map[string]State
 
+	ProjectLanguages map[string]bool
+
 	Modules         map[string]bool
 	HaveModuleUsage bool
 
@@ -49,6 +51,17 @@ type Result struct {
 	GoVersion string
 
 	MainModule string
+}
+
+func (r *Result) KnowsProjectLanguages() bool {
+	return r != nil && len(r.ProjectLanguages) > 0
+}
+
+func (r *Result) HasProjectLanguage(language string) bool {
+	if r == nil || len(r.ProjectLanguages) == 0 {
+		return false
+	}
+	return r.ProjectLanguages[normalizeProjectLanguage(language)]
 }
 
 func (r *Result) AtomPackageUsage(ecosystem, purlNoVersion string) State {

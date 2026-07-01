@@ -56,6 +56,18 @@ func stringMatrixField(v reflect.Value, n string) [][]string {
 	return out
 }
 
+func relevantField(v reflect.Value, n string) (value bool, known bool) {
+	f := v.FieldByName(n)
+	if !f.IsValid() || f.Kind() != reflect.Ptr || f.IsNil() {
+		return false, false
+	}
+	e := f.Elem()
+	if e.Kind() != reflect.Bool {
+		return false, false
+	}
+	return e.Bool(), true
+}
+
 func boolNested(v reflect.Value, parent, child string) bool {
 	p := v.FieldByName(parent)
 	if !p.IsValid() {

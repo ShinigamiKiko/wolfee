@@ -47,6 +47,20 @@ func purlNoVersion(p string) string {
 	return strings.ToLower(p)
 }
 
+func purlVersion(p string) string {
+	p = strings.TrimSpace(p)
+	if p == "" {
+		return ""
+	}
+	if i := strings.IndexAny(p, "?#"); i >= 0 {
+		p = p[:i]
+	}
+	if i := strings.LastIndexByte(p, '@'); i >= 0 {
+		return p[i+1:]
+	}
+	return ""
+}
+
 func SyntheticSBOMFromPURL(p string) ([]byte, error) {
 	p = strings.TrimSpace(p)
 	if p == "" {

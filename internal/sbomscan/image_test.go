@@ -254,7 +254,7 @@ func TestBuildImageReport_ReachabilityJoin(t *testing.T) {
 		Modules:         map[string]bool{"github.com/jackc/pgx/v5": true},
 	}
 
-	sourceLibs := map[string]bool{"pkg:golang/github.com/jackc/pgx/v5": true}
+	sourceLibs := SourceLibSet([]byte(`{"components":[{"purl":"pkg:golang/github.com/jackc/pgx/v5@v5.7.2"}]}`))
 
 	rep := buildImageReport("image:my-app:latest", ros, tr, results, baseAttribution{}, oracle, sourceLibs, nil)
 
@@ -308,8 +308,8 @@ func TestBuildImageReport_StdlibVersionAttribution(t *testing.T) {
 				t.Errorf("app stdlib %s origin = %q, want app", c.Version, c.Origin)
 			}
 		case "v1.25.9":
-			if c.Origin != OriginImage {
-				t.Errorf("foreign stdlib %s origin = %q, want image", c.Version, c.Origin)
+			if c.Origin != OriginImageLib {
+				t.Errorf("foreign stdlib %s origin = %q, want image-lib", c.Version, c.Origin)
 			}
 		}
 	}

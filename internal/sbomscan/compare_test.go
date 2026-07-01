@@ -58,6 +58,87 @@ func TestMergeSourceVulns(t *testing.T) {
 	}
 }
 
+func TestMergeSourceVulns_NoCrossVersionContamination(t *testing.T) {
+	// The image bundles golang.org/x/crypto@v0.49.0 (only the CVEs that still
+	// affect 0.49). The source declares golang.org/x/crypto@v0.31.0 (older, more
+	// CVEs). Merging must not push the 0.31.0-only CVE onto the 0.49.0 entry.
+	image := &Report{Components: []ComponentReport{
+		comp("pkg:golang/golang.org/x/crypto@v0.49.0", "golang.org/x/crypto", "v0.49.0", "",
+			onlinescan.Vulnerability{ID: "CVE-2026-39827", CVE: "CVE-2026-39827", Severity: "HIGH"}),
+	}}
+	source := &Report{Components: []ComponentReport{
+		comp("pkg:golang/golang.org/x/crypto@v0.31.0", "golang.org/x/crypto", "v0.31.0", "optional",
+			onlinescan.Vulnerability{ID: "CVE-2025-22869", CVE: "CVE-2025-22869", Severity: "HIGH"}),
+	}}
+
+	MergeSourceVulns(image, source, nil)
+
+	var hi, lo *ComponentReport
+	for i := range image.Components {
+		switch image.Components[i].Version {
+		case "v0.49.0":
+			hi = &image.Components[i]
+		case "v0.31.0":
+			lo = &image.Components[i]
+		}
+	}
+	if hi == nil {
+		t.Fatal("image crypto@v0.49.0 went missing after merge")
+	}
+	if hi.VulnCount != 1 || vulnHasID(hi.Vulnerabilities, "CVE-2025-22869") {
+		t.Errorf("v0.49.0 must keep only its own CVE, got %d vulns incl 0.31.0's: %+v",
+			hi.VulnCount, hi.Vulnerabilities)
+	}
+	if lo == nil {
+		t.Fatal("source-only crypto@v0.31.0 should be added as its own component")
+	}
+	if lo.VulnCount != 1 || !vulnHasID(lo.Vulnerabilities, "CVE-2025-22869") {
+		t.Errorf("v0.31.0 entry should carry its own CVE, got %+v", lo.Vulnerabilities)
+	}
+}
+
+func TestFromSource_VersionAware(t *testing.T) {
+	// Source declares golang.org/x/crypto@v0.31.0. The image also bundles a
+	// tool built with v0.49.0. Only the version your code actually uses is APP;
+	// the foreign version stays an image library.
+	src := SourceLibSet([]byte(`{"components":[{"purl":"pkg:golang/golang.org/x/crypto@v0.31.0"}]}`))
+
+	inCode := ComponentReport{
+		PURL: "pkg:golang/golang.org/x/crypto@v0.31.0", System: "golang",
+		Name: "golang.org/x/crypto", Version: "v0.31.0",
+	}
+	fromImage := ComponentReport{
+		PURL: "pkg:golang/golang.org/x/crypto@v0.49.0", System: "golang",
+		Name: "golang.org/x/crypto", Version: "v0.49.0",
+	}
+
+	if !fromSource(&inCode, src, nil) {
+		t.Error("source-matched version should be attributed to APP")
+	}
+	if fromSource(&fromImage, src, nil) {
+		t.Error("a version present only in the image must not be APP (should be LIB(image))")
+	}
+}
+
+func TestMarkImageLibs(t *testing.T) {
+	comps := []ComponentReport{
+		{System: "golang", PURL: "pkg:golang/golang.org/x/crypto@v0.49.0", Origin: OriginImage},
+		{System: "apk", PURL: "pkg:apk/alpine/musl@1.2.4-r5", Origin: OriginImage},
+		{System: "golang", PURL: "pkg:golang/golang.org/x/crypto@v0.31.0", Origin: OriginApp},
+	}
+	markImageLibs(comps)
+
+	if comps[0].Origin != OriginImageLib {
+		t.Errorf("language lib in image origin = %q, want image-lib", comps[0].Origin)
+	}
+	if comps[1].Origin != OriginImage {
+		t.Errorf("OS package origin = %q, want image (stays)", comps[1].Origin)
+	}
+	if comps[2].Origin != OriginApp {
+		t.Errorf("app component origin = %q, want app (untouched)", comps[2].Origin)
+	}
+}
+
 func TestSourceScopeMap_GoIndirectProperty(t *testing.T) {
 	bom := []byte(`{"components":[
 		{"purl":"pkg:golang/example.com/direct@v1.0.0"},

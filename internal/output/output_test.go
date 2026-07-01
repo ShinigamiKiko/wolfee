@@ -165,8 +165,11 @@ func TestSplitNameVer(t *testing.T) {
 	}
 }
 
-func TestTable_Render_DependencyPathsVersionDrift(t *testing.T) {
-
+func TestTable_Render_DependencyPathsPinVulnVersion(t *testing.T) {
+	// In --compare the path is grafted from the source SBOM and can carry a
+	// different (require-edge) version than the one actually flagged. The
+	// rendered chain must end at the flagged version so it matches the "(vuln)"
+	// header instead of showing an unexplained second version.
 	r := &tReport{
 		Totals: tTotals{Components: 1, Scanned: 1, WithVulns: 1, HIGH: 1},
 		Components: []tComponent{
@@ -177,15 +180,18 @@ func TestTable_Render_DependencyPathsVersionDrift(t *testing.T) {
 		},
 	}
 	var buf bytes.Buffer
-	if err := (Table{NoColor: false}).Render(&buf, r); err != nil {
+	if err := (Table{NoColor: true}).Render(&buf, r); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
-	if !strings.Contains(out, "\x1b[31mv0.49.0\x1b[0m") {
-		t.Errorf("image version should be red:\n%q", out)
+	if !strings.Contains(out, "golang.org/x/crypto@v0.49.0 (vuln)") {
+		t.Errorf("header should show the flagged version:\n%s", out)
 	}
-	if !strings.Contains(out, "\x1b[32mv0.31.0\x1b[0m") {
-		t.Errorf("source version should be green:\n%q", out)
+	if !strings.Contains(out, "github.com/jackc/pgx/v5@v5.7.2 › golang.org/x/crypto@v0.49.0") {
+		t.Errorf("chain should end at the flagged version:\n%s", out)
+	}
+	if strings.Contains(out, "v0.31.0") {
+		t.Errorf("stale source-graph version should not leak into the path:\n%s", out)
 	}
 }
 

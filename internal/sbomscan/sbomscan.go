@@ -288,6 +288,7 @@ func ScanBOM(ctx context.Context, o Options) (*Report, error) {
 
 	injectGovulncheckFindings(&r.Components, o.Reachability)
 	backfillSyntheticSeverities(ctx, &r.Components, o)
+	filterVulnsByVersion(r.Components)
 
 	annotateDependencyPaths(r)
 

@@ -12,7 +12,7 @@ func anyOriginAttributed(components reflect.Value) bool {
 	}
 	for i := 0; i < components.Len(); i++ {
 		switch stringField(components.Index(i), "Origin") {
-		case "base", "app", "image":
+		case "base", "app", "image", "image-lib":
 			return true
 		}
 	}
@@ -25,7 +25,7 @@ func anyNonOSComponent(components reflect.Value) bool {
 	}
 	for i := 0; i < components.Len(); i++ {
 		switch strings.ToLower(stringField(components.Index(i), "System")) {
-		case "deb", "apk", "rpm", "":
+		case "deb", "dpkg", "apk", "apkdb", "rpm", "wolfi", "":
 
 		default:
 			return true
@@ -40,6 +40,19 @@ func anyLayerDigest(components reflect.Value) bool {
 	}
 	for i := 0; i < components.Len(); i++ {
 		if stringField(components.Index(i), "LayerDigest") != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func anyLanguageRelevance(components reflect.Value) bool {
+	if !components.IsValid() {
+		return false
+	}
+	for i := 0; i < components.Len(); i++ {
+		c := components.Index(i)
+		if stringField(c, "Language") != "" || stringField(c, "LanguageRelevance") != "" {
 			return true
 		}
 	}
@@ -137,10 +150,119 @@ func originLabel(system, origin string, transitive bool) string {
 			return "APP(T)"
 		}
 		return "APP"
-	case "image":
+	case "image", "image-lib":
 		return "LIB(image)"
 	default:
 		return "-"
+	}
+}
+
+func langLabel(system, purl, language string) string {
+	lang := normalizeLang(language)
+	if lang == "" {
+		lang = ecosystemLang(system, purl)
+	}
+	if lang == "" {
+		return "unknown"
+	}
+	if lang == "os" {
+		return "runtime/os"
+	}
+	return "relevant-" + displayLang(lang)
+}
+
+func ecosystemLang(system, purl string) string {
+	eco := strings.ToLower(strings.TrimSpace(system))
+	if purlEco := purlEcosystem(purl); purlEco != "" {
+		eco = purlEco
+	}
+	switch eco {
+	case "deb", "dpkg", "apk", "apkdb", "rpm", "wolfi":
+		return "os"
+	case "go", "golang":
+		return "go"
+	case "npm":
+		return "js"
+	case "pypi", "pip":
+		return "python"
+	case "maven", "gradle":
+		return "java"
+	case "composer":
+		return "php"
+	case "cargo":
+		return "rust"
+	case "nuget":
+		return "dotnet"
+	case "gem":
+		return "ruby"
+	case "hex":
+		return "elixir"
+	case "pub":
+		return "dart"
+	case "swift":
+		return "swift"
+	case "conan":
+		return "cpp"
+	default:
+		return ""
+	}
+}
+
+func purlEcosystem(purl string) string {
+	purl = strings.TrimSpace(strings.ToLower(purl))
+	if !strings.HasPrefix(purl, "pkg:") {
+		return ""
+	}
+	rest := purl[len("pkg:"):]
+	if i := strings.IndexByte(rest, '/'); i > 0 {
+		return rest[:i]
+	}
+	return ""
+}
+
+func normalizeLang(language string) string {
+	switch strings.ToLower(strings.TrimSpace(language)) {
+	case "go", "golang":
+		return "go"
+	case "js", "javascript", "typescript", "node", "nodejs", "npm":
+		return "js"
+	case "py", "python", "pypi", "pip":
+		return "python"
+	case "java", "maven", "gradle":
+		return "java"
+	case "php", "composer":
+		return "php"
+	case "rust", "cargo":
+		return "rust"
+	case "dotnet", ".net", "nuget", "csharp", "c#":
+		return "dotnet"
+	case "ruby", "gem":
+		return "ruby"
+	case "elixir", "hex":
+		return "elixir"
+	case "dart", "pub":
+		return "dart"
+	case "swift":
+		return "swift"
+	case "cpp", "c++", "c", "conan":
+		return "cpp"
+	case "os", "runtime", "deb", "apk", "rpm":
+		return "os"
+	default:
+		return ""
+	}
+}
+
+func displayLang(lang string) string {
+	switch normalizeLang(lang) {
+	case "python":
+		return "py"
+	case "dotnet":
+		return "dotnet"
+	case "elixir":
+		return "ex"
+	default:
+		return normalizeLang(lang)
 	}
 }
 

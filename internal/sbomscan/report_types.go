@@ -178,6 +178,10 @@ type ComponentReport struct {
 
 	PackageUsage string `json:"packageUsage,omitempty"`
 
+	Language          string `json:"language,omitempty"`
+	LanguageRelevance string `json:"languageRelevance,omitempty"`
+	Relevant          *bool  `json:"relevant,omitempty"`
+
 	ImportSite string `json:"importSite,omitempty"`
 
 	ImportLine string `json:"importLine,omitempty"`

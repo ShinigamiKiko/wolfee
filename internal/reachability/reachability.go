@@ -21,6 +21,9 @@ func Analyze(ctx context.Context, o Options) (*Result, error) {
 	if o.Dir == "" {
 		return res, nil
 	}
+	if langs := detectProjectLanguages(o.Dir); len(langs) > 0 {
+		res.ProjectLanguages = langs
+	}
 
 	if err := goReachability(ctx, o, res); err != nil && o.Logger != nil {
 		o.Logger.Warn("reachability(go): %v - Go findings stay unknown", err)

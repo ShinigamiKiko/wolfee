@@ -44,3 +44,16 @@ func (c colors) origin(label string) string {
 		return c.low(label)
 	}
 }
+
+func (c colors) lang(label string, relevant, known bool) string {
+	if label == "" {
+		return label
+	}
+	if !known {
+		return c.low(label)
+	}
+	if relevant {
+		return c.green(label)
+	}
+	return c.high(label)
+}
