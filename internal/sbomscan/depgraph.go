@@ -98,11 +98,12 @@ func resolveDepPaths(target string, parents map[string][]string, roots map[strin
 		}
 		budget--
 
-		directlyRooted := false
 		var nonRoot []string
 		for _, p := range parents[node] {
 			if roots[p] {
-				directlyRooted = true
+				continue
+			}
+			if onStack[p] {
 				continue
 			}
 			nonRoot = append(nonRoot, p)
@@ -110,13 +111,10 @@ func resolveDepPaths(target string, parents map[string][]string, roots map[strin
 
 		var paths [][]string
 
-		if directlyRooted || len(nonRoot) == 0 {
+		if len(nonRoot) == 0 {
 			paths = append(paths, []string{node})
 		}
 		for _, p := range nonRoot {
-			if onStack[p] {
-				continue
-			}
 			onStack[p] = true
 			for _, sub := range walk(p, depth+1) {
 

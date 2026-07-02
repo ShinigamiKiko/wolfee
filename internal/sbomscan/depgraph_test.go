@@ -68,6 +68,27 @@ func TestDependencyPathsWeb(t *testing.T) {
 	}
 }
 
+func TestDependencyPathsPrefersParentChainOverRootShortcut(t *testing.T) {
+
+	r := withRoot("root",
+		[]Dependency{
+			dep("root", "direct", "middle"),
+			dep("direct", "middle"),
+			dep("middle", "leaf"),
+			dep("leaf", "vuln"),
+		},
+		gnode("direct", "direct-dep", "1.0.0"),
+		gnode("middle", "middle-dep", "2.0.0"),
+		gnode("leaf", "leaf-dep", "3.0.0"),
+		gnode("vuln", "vulnerable-dep", "4.0.0"),
+	)
+	annotateDependencyPaths(r)
+
+	if got, want := pathsOf(r, "vulnerable-dep"), [][]string{{"direct-dep@1.0.0", "middle-dep@2.0.0", "leaf-dep@3.0.0", "vulnerable-dep@4.0.0"}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("vulnerable-dep paths: got %v want %v", got, want)
+	}
+}
+
 func TestDependencyPathsCycleTerminates(t *testing.T) {
 
 	r := withRoot("root",
