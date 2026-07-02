@@ -291,6 +291,7 @@ func ScanBOM(ctx context.Context, o Options) (*Report, error) {
 	filterVulnsByVersion(r.Components)
 
 	annotateDependencyPaths(r)
+	annotateRemediations(ctx, r, onlinescan.DefaultHTTPClient(), o.Logger)
 
 	seenCVE := map[string]struct{}{}
 	for _, c := range r.Components {

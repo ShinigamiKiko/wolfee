@@ -54,6 +54,37 @@ type Vulnerability struct {
 	DistroStatus []DistroStatus `json:"distroStatus,omitempty"`
 
 	RelatedAdvisories []string `json:"relatedAdvisories,omitempty"`
+
+	// Remediation, for a transitive finding, tells you which direct
+	// ("father") dependency to bump and to what version so this vuln's
+	// package resolves to a fixed release. Computed online via deps.dev
+	// (resolved dependency graphs) cross-checked against OSV.dev.
+	Remediation *Remediation `json:"remediation,omitempty"`
+}
+
+// Remediation describes the actionable upgrade for a (usually transitive)
+// vulnerability: bump Direct from CurrentVersion to FixVersion, after which
+// the vulnerable package resolves to ChildFixed (or is dropped entirely).
+type Remediation struct {
+	// Direct is the nearest direct dependency in the path ("father"): the
+	// lever you actually control in your manifest.
+	Direct string `json:"direct"`
+
+	CurrentVersion string `json:"currentVersion,omitempty"`
+
+	// FixVersion is the version of Direct that drops the vulnerable release.
+	FixVersion string `json:"fixVersion,omitempty"`
+
+	// ChildFixed is the version the vulnerable package resolves to under
+	// Direct@FixVersion. "(removed)" means the dependency is no longer pulled.
+	ChildFixed string `json:"childFixed,omitempty"`
+
+	// Via is how the fix is applied: "direct-bump" (the vulnerable package is
+	// itself a direct dependency), "parent-bump" (bump Direct), or "override"
+	// (no parent version helps - pin the child via overrides/resolutions).
+	Via string `json:"via,omitempty"`
+
+	Note string `json:"note,omitempty"`
 }
 
 type VulnImport struct {
@@ -84,4 +115,8 @@ type Toxic struct {
 	Found      bool     `json:"found"`
 	Categories []string `json:"categories,omitempty"`
 	Notes      []string `json:"notes,omitempty"`
+
+	// Remediation suggests an upgrade off the flagged (protestware/toxic)
+	// release, treated like a vulnerability fix. Computed via deps.dev.
+	Remediation *Remediation `json:"remediation,omitempty"`
 }

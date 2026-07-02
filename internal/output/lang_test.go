@@ -125,7 +125,7 @@ func TestTable_Render_LangRelevanceColors(t *testing.T) {
 	}
 }
 
-func TestTable_Render_NoLangColumnWithoutLanguageContext(t *testing.T) {
+func TestTable_Render_PlainLangWithoutRelevance(t *testing.T) {
 	r := &langTableReport{
 		Totals: langTableTotals{Components: 1, Scanned: 1, WithVulns: 1, HIGH: 1},
 		Components: []langTableComponent{
@@ -138,7 +138,12 @@ func TestTable_Render_NoLangColumnWithoutLanguageContext(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := buf.String()
-	if strings.Contains(out, "LANG") {
-		t.Fatalf("LANG header should be hidden without language context:\n%s", out)
+	// LANG is always shown now; without reachability it is the plain ecosystem
+	// language, not the "relevant-" framing.
+	if !strings.Contains(out, "LANG") || !strings.Contains(out, "js") {
+		t.Fatalf("expected plain js language column:\n%s", out)
+	}
+	if strings.Contains(out, "relevant-js") {
+		t.Fatalf("relevant- framing must not appear without reachability data:\n%s", out)
 	}
 }

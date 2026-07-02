@@ -1,3 +1,5 @@
+deps.dev/util/semver v0.0.0-20260617025149-7d3577045631 h1:cCQUmBGwsnxLYo/NA5nBOmvaBgRGO78FBNYF8VbaxDM=
+deps.dev/util/semver v0.0.0-20260617025149-7d3577045631/go.mod h1:jjJweVqtuMQ7Q4zlTQ/kCHpboojkRvpMYlhy/c93DVU=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/knqyf263/go-deb-version v0.0.0-20241115132648-6f4aee6ccd23 h1:dWzdsqjh1p2gNtRKqNwuBvKqMNwnLOPLzVZT1n6DK7s=

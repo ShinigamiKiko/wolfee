@@ -201,9 +201,30 @@ func collectReachableVulns(components reflect.Value) []topVulnRow {
 }
 
 func firstFix(v reflect.Value) string {
+	// Prefer the computed remediation: it points at the dependency you actually
+	// control (the direct "father"), not the deeply transitive vulnerable lib.
+	if bump := remediationBump(v); bump != "" {
+		return bump
+	}
 	f := v.FieldByName("Fixed")
 	if f.IsValid() && f.Kind() == reflect.Slice && f.Len() > 0 {
 		return f.Index(0).String()
 	}
 	return ""
+}
+
+// remediationBump returns "direct@fixVersion" when a remediation was computed,
+// so the fix column tells the reader which manifest entry to change.
+func remediationBump(v reflect.Value) string {
+	rem := v.FieldByName("Remediation")
+	if !rem.IsValid() || rem.Kind() != reflect.Ptr || rem.IsNil() {
+		return ""
+	}
+	r := rem.Elem()
+	direct := stringField(r, "Direct")
+	fixVer := stringField(r, "FixVersion")
+	if direct == "" || fixVer == "" {
+		return ""
+	}
+	return direct + "@" + fixVer
 }

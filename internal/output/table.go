@@ -138,11 +138,9 @@ func (t Table) Render(w io.Writer, report any) error {
 		}
 		fg.add(header...)
 	} else {
-		header := []string{"PACKAGE", "VERSION", "ECO", "VULNS", "FLAGS", "TOXIC"}
-		if showLang {
-			header = append(header, "LANG")
-		}
-		fg.add(header...)
+		// Non-image scans (SBOM / reachable): ORIGIN tells direct vs transitive,
+		// LANG the ecosystem language. Both are always shown here.
+		fg.add("PACKAGE", "VERSION", "ECO", "VULNS", "FLAGS", "TOXIC", "ORIGIN", "LANG")
 	}
 	shown := 0
 	for _, r := range rows {
@@ -221,9 +219,8 @@ func (t Table) Render(w io.Writer, report any) error {
 				fmt.Sprintf("%d", intField(comp, "VulnCount")),
 				strings.Join(flags, " "),
 				toxic,
-			}
-			if showLang {
-				cells = append(cells, lang)
+				depScopeCell(c, comp, transitive),
+				langCell(c, comp),
 			}
 			fg.add(cells...)
 		}
@@ -333,31 +330,43 @@ func (t Table) Render(w io.Writer, report any) error {
 
 func renderDependencyPaths(w io.Writer, c colors, components reflect.Value) {
 	type row struct {
-		pkg   string
-		paths [][]string
+		pkg       string
+		label     string // "(vuln)" or "(toxic)"
+		paths     [][]string
+		remDirect string
+		remFixVer string
+		remVia    string
+		remNote   string
 	}
 	var rows []row
 	for i := 0; i < components.Len(); i++ {
 		comp := components.Index(i)
-		vulns := comp.FieldByName("Vulnerabilities")
-		if !vulns.IsValid() || vulns.Len() == 0 {
-			continue
-		}
 		paths := stringMatrixField(comp, "DependencyPaths")
 		if len(paths) == 0 {
 			continue
 		}
-		rows = append(rows, row{
-			pkg:   fmt.Sprintf("%s@%s", stringField(comp, "Name"), stringField(comp, "Version")),
-			paths: paths,
-		})
+		vulns := comp.FieldByName("Vulnerabilities")
+		hasVulns := vulns.IsValid() && vulns.Len() > 0
+		pkg := fmt.Sprintf("%s@%s", stringField(comp, "Name"), stringField(comp, "Version"))
+		switch {
+		case hasVulns:
+			direct, fixVer, via, note := remediationParts(comp)
+			rows = append(rows, row{pkg: pkg, label: c.high("(vuln)"), paths: paths,
+				remDirect: direct, remFixVer: fixVer, remVia: via, remNote: note})
+		case boolNested(comp, "Toxic", "Found"):
+			// A toxic (protestware) lib is treated like a vulnerability, just
+			// under a different name.
+			direct, fixVer, via, note := toxicRemediationParts(comp)
+			rows = append(rows, row{pkg: pkg, label: c.high("(toxic)"), paths: paths,
+				remDirect: direct, remFixVer: fixVer, remVia: via, remNote: note})
+		}
 	}
 	if len(rows) == 0 {
 		return
 	}
-	fmt.Fprintln(w, c.bold("Dependency paths")+c.low("  (* = update this to fix - chain ends at the vulnerable lib)"))
+	fmt.Fprintln(w, c.bold("Dependency paths")+c.low("  (* = update this; green = version to bump it to)"))
 	const maxRows = 50
-	sep := c.low(" › ")
+	sep := c.low(" -> ")
 	for i, r := range rows {
 		if i >= maxRows {
 			fmt.Fprintln(w, c.low(fmt.Sprintf("  ... (%d more - use --format json for the full list)", len(rows)-i)))
@@ -365,15 +374,19 @@ func renderDependencyPaths(w io.Writer, c colors, components reflect.Value) {
 		}
 
 		_, compVer := splitNameVer(r.pkg)
+		// The green upgrade target is only attached to the father when the
+		// finding is fixed by bumping it (parent-bump); "override" findings have
+		// no helpful father version and get a trailing note instead.
+		inlineFix := r.remVia == "parent-bump" && r.remFixVer != ""
 
-		fmt.Fprintf(w, "  %s %s\n", r.pkg, c.high("(vuln)"))
+		fmt.Fprintf(w, "  %s %s\n", r.pkg, r.label)
 		for _, p := range r.paths {
 			if len(p) == 0 {
 				continue
 			}
 
 			hops := append([]string(nil), p...)
-			// The chain ends at the vulnerable lib, so pin its last hop to the
+			// The chain ends at the flagged lib, so pin its last hop to the
 			// version that was actually flagged. In --compare the path is grafted
 			// from the source SBOM, which can record a different (require-edge)
 			// version than the one the image ships - showing that here just looked
@@ -384,9 +397,81 @@ func renderDependencyPaths(w io.Writer, c colors, components reflect.Value) {
 					hops[last] = n + "@" + compVer
 				}
 			}
+			// Show the upgrade target right next to the father lib, e.g.
+			//   *express@4.17.1 → 4.21.1 -> cookie@0.4.0
+			if inlineFix {
+				if n, _ := splitNameVer(p[0]); strings.EqualFold(n, r.remDirect) {
+					hops[0] += c.green(" → " + r.remFixVer)
+				}
+			}
 			hops[0] = c.crit("*") + hops[0]
 			fmt.Fprintf(w, "    %s\n", strings.Join(hops, sep))
 		}
+		if !inlineFix && r.remDirect != "" && r.remFixVer != "" {
+			fix := fmt.Sprintf("pin %s → %s", r.remDirect, r.remFixVer)
+			if r.remNote != "" {
+				fix += " (" + r.remNote + ")"
+			}
+			fmt.Fprintf(w, "    %s %s\n", c.green("fix:"), fix)
+		}
 	}
 	fmt.Fprintln(w)
+}
+
+// remediationParts returns the computed upgrade for a component's first
+// vulnerability that has one: the direct ("father") dependency to change, the
+// version to move it to, how (parent-bump vs override), and any note.
+func remediationParts(comp reflect.Value) (direct, fixVer, via, note string) {
+	vulns := comp.FieldByName("Vulnerabilities")
+	if !vulns.IsValid() {
+		return "", "", "", ""
+	}
+	for i := 0; i < vulns.Len(); i++ {
+		rem := vulns.Index(i).FieldByName("Remediation")
+		if !rem.IsValid() || rem.Kind() != reflect.Ptr || rem.IsNil() {
+			continue
+		}
+		r := rem.Elem()
+		return stringField(r, "Direct"), stringField(r, "FixVersion"),
+			stringField(r, "Via"), stringField(r, "Note")
+	}
+	return "", "", "", ""
+}
+
+// toxicRemediationParts returns the upgrade computed for a toxic package.
+func toxicRemediationParts(comp reflect.Value) (direct, fixVer, via, note string) {
+	tox := comp.FieldByName("Toxic")
+	if !tox.IsValid() {
+		return "", "", "", ""
+	}
+	rem := tox.FieldByName("Remediation")
+	if !rem.IsValid() || rem.Kind() != reflect.Ptr || rem.IsNil() {
+		return "", "", "", ""
+	}
+	r := rem.Elem()
+	return stringField(r, "Direct"), stringField(r, "FixVersion"),
+		stringField(r, "Via"), stringField(r, "Note")
+}
+
+// depScopeCell renders the ORIGIN cell for non-image scans: whether the package
+// is a direct dependency or pulled in transitively. A recorded dependency path
+// (or an optional/used-transitive scope) means transitive.
+func depScopeCell(c colors, comp reflect.Value, transitive bool) string {
+	if transitive || len(stringMatrixField(comp, "DependencyPaths")) > 0 {
+		return c.low("transitive")
+	}
+	return "direct"
+}
+
+// langCell renders the LANG cell. With reachability data it keeps the
+// relevance-coloured "relevant-<lang>" label; otherwise it shows the plain
+// ecosystem language (js, go, python, ...).
+func langCell(c colors, comp reflect.Value) string {
+	if relevant, known := relevantField(comp, "Relevant"); known {
+		return c.lang(
+			langLabel(stringField(comp, "System"), stringField(comp, "PURL"), stringField(comp, "Language")),
+			relevant, known,
+		)
+	}
+	return c.low(plainLangLabel(stringField(comp, "System"), stringField(comp, "PURL")))
 }

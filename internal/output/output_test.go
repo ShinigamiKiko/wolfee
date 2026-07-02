@@ -44,7 +44,16 @@ type tMalware struct {
 	Reference string
 }
 type tToxic struct {
-	Found bool
+	Found       bool
+	Categories  []string
+	Remediation *tRemediation
+}
+type tRemediation struct {
+	Direct         string
+	CurrentVersion string
+	FixVersion     string
+	Via            string
+	Note           string
 }
 
 func sampleReport() *tReport {
@@ -138,14 +147,14 @@ func TestTable_Render_DependencyPaths(t *testing.T) {
 		t.Errorf("missing (vuln) label:\n%s", out)
 	}
 
-	if !strings.Contains(out, "*github.com/foo/api@1.4.0 › github.com/bar/render@2.1.0 › golang.org/x/text@0.3.5") {
+	if !strings.Contains(out, "*github.com/foo/api@1.4.0 -> github.com/bar/render@2.1.0 -> golang.org/x/text@0.3.5") {
 		t.Errorf("missing full starred route:\n%s", out)
 	}
-	if !strings.Contains(out, "*github.com/baz/cli@0.9.0 › golang.org/x/text@0.3.5") {
+	if !strings.Contains(out, "*github.com/baz/cli@0.9.0 -> golang.org/x/text@0.3.5") {
 		t.Errorf("missing second starred route:\n%s", out)
 	}
 
-	if strings.Contains(out, "y@1 (vuln)") || strings.Contains(out, "› y@1") {
+	if strings.Contains(out, "y@1 (vuln)") || strings.Contains(out, "-> y@1") {
 		t.Errorf("non-vulnerable component should not appear in dependency paths:\n%s", out)
 	}
 }
@@ -187,7 +196,7 @@ func TestTable_Render_DependencyPathsPinVulnVersion(t *testing.T) {
 	if !strings.Contains(out, "golang.org/x/crypto@v0.49.0 (vuln)") {
 		t.Errorf("header should show the flagged version:\n%s", out)
 	}
-	if !strings.Contains(out, "github.com/jackc/pgx/v5@v5.7.2 › golang.org/x/crypto@v0.49.0") {
+	if !strings.Contains(out, "github.com/jackc/pgx/v5@v5.7.2 -> golang.org/x/crypto@v0.49.0") {
 		t.Errorf("chain should end at the flagged version:\n%s", out)
 	}
 	if strings.Contains(out, "v0.31.0") {
@@ -319,13 +328,63 @@ func TestTable_Render_BaseHint(t *testing.T) {
 	}
 }
 
-func TestTable_Render_NoOriginColumnForNonImage(t *testing.T) {
+func TestTable_Render_OriginAndLangForNonImage(t *testing.T) {
+	r := &tReport{
+		Source: "sbom:app.cdx.json",
+		Totals: tTotals{Components: 2, Scanned: 2, WithVulns: 2, HIGH: 2},
+		Components: []tComponent{
+			{PURL: "pkg:npm/express@4.17.1", System: "NPM", Name: "express", Version: "4.17.1",
+				TopSeverity: "HIGH", VulnCount: 1},
+			{PURL: "pkg:npm/cookie@0.4.0", System: "NPM", Name: "cookie", Version: "0.4.0",
+				TopSeverity: "HIGH", VulnCount: 1,
+				DependencyPaths: [][]string{{"express@4.17.1", "cookie@0.4.0"}}},
+		},
+	}
 	var buf bytes.Buffer
-	if err := (Table{NoColor: true}).Render(&buf, sampleReport()); err != nil {
+	if err := (Table{NoColor: true}).Render(&buf, r); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(buf.String(), "ORIGIN") {
-		t.Errorf("ORIGIN column must be hidden for non-image scans:\n%s", buf.String())
+	out := buf.String()
+	if !strings.Contains(out, "ORIGIN") || !strings.Contains(out, "LANG") {
+		t.Errorf("ORIGIN/LANG columns must be shown for non-image scans:\n%s", out)
+	}
+	// express is direct (no path); cookie is transitive (has a dep path).
+	if !strings.Contains(out, "direct") || !strings.Contains(out, "transitive") {
+		t.Errorf("expected both direct and transitive origins:\n%s", out)
+	}
+	if !strings.Contains(out, "js") {
+		t.Errorf("expected npm packages to show js language:\n%s", out)
+	}
+}
+
+func TestTable_Render_ToxicInDependencyPaths(t *testing.T) {
+	r := &tReport{
+		Source: "sbom:app.cdx.json",
+		Totals: tTotals{Components: 2, Scanned: 2, Toxic: 1},
+		Components: []tComponent{
+			{PURL: "pkg:npm/vite@7.3.2", System: "NPM", Name: "vite", Version: "7.3.2"},
+			{PURL: "pkg:npm/acorn@8.16.0", System: "NPM", Name: "acorn", Version: "8.16.0",
+				Toxic: tToxic{Found: true, Categories: []string{"political_slogans"},
+					Remediation: &tRemediation{Direct: "acorn", CurrentVersion: "8.16.0",
+						FixVersion: "8.17.0", Via: "override", Note: "toxic-repos"}},
+				DependencyPaths: [][]string{{"vite@7.3.2", "acorn@8.16.0"}}},
+		},
+	}
+	var buf bytes.Buffer
+	if err := (Table{NoColor: true}).Render(&buf, r); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	// The Findings TOXIC cell must no longer carry the inline fix.
+	if strings.Contains(out, "acorn@8.17.0") && strings.Contains(out, "TOXIC[political_slogans] → acorn@8.17.0") {
+		t.Errorf("toxic fix must not appear in the Findings TOXIC cell:\n%s", out)
+	}
+	// It appears in Dependency paths as (toxic) with a fix line instead.
+	if !strings.Contains(out, "acorn@8.16.0 (toxic)") {
+		t.Errorf("toxic lib should appear in Dependency paths labelled (toxic):\n%s", out)
+	}
+	if !strings.Contains(out, "pin acorn → 8.17.0") {
+		t.Errorf("toxic fix line missing from Dependency paths:\n%s", out)
 	}
 }
 

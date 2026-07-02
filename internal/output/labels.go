@@ -171,6 +171,19 @@ func langLabel(system, purl, language string) string {
 	return "relevant-" + displayLang(lang)
 }
 
+// plainLangLabel is the ecosystem language without the reachability "relevant-"
+// framing, used when no call-graph relevance data is available.
+func plainLangLabel(system, purl string) string {
+	switch l := ecosystemLang(system, purl); l {
+	case "":
+		return "unknown"
+	case "os":
+		return "os"
+	default:
+		return displayLang(l)
+	}
+}
+
 func ecosystemLang(system, purl string) string {
 	eco := strings.ToLower(strings.TrimSpace(system))
 	if purlEco := purlEcosystem(purl); purlEco != "" {
